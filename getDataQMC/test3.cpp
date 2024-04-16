@@ -6,9 +6,13 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
 #include <sys/socket.h>
-#include <hmc5883l.h>
+#define I2C_DEV "/dev/i2c-1" // Шлях до пристрою I2C
 
+#define QMC5883L_ADDR 0x0D // Адреса датчика QMC5883L на шині I2C
 #define PORT 14555
 #define DEST_IP "192.168.88.64"
 typedef struct __attribute__((packed)) {
@@ -69,17 +73,46 @@ int main() {
 
     std::cin>>dest_ip;
     const char* input = dest_ip.c_str();
-    HMC5883L hmc5883l;
-  
-  // Initialize
-  if( hmc5883l_init(&hmc5883l) != HMC5883L_OKAY ) {
-      fprintf(stderr, "Error: %d\n", hmc5883l._error);
-      exit(1);
-  }
-  
-  // Read
-  hmc5883l_read(&hmc5883l);
-  float axis_x = hmc5883l._data.x;
+    int file;
+    char filename[20];
+    int x, y, z;
+
+    // Відкриття з'єднання з шиною I2C
+    if ((file = open(I2C_DEV, O_RDWR)) < 0) {
+        std::cerr << "Failed to open the i2c bus" << std::endl;
+        return 1;
+    }
+
+    // Встановлення адреси датчика QMC5883L
+    if (ioctl(file, I2C_SLAVE, QMC5883L_ADDR) < 0) {
+        std::cerr << "Failed to acquire bus access and/or talk to slave" << std::endl;
+        return 1;
+    }
+
+    // Налаштування режиму роботи датчика
+    char buf[2] = {0};
+    buf[0] = 0x09; // Адрес регістру CTRL_REG
+    buf[1] = 0x01; // Нове значення для встановлення одного заміру
+    if (write(file, buf, 2) != 2) {
+        std::cerr << "Error writing to QMC5883L" << std::endl;
+        return 1;
+    }
+
+    // Читання значень магнітного поля
+    char data[6];
+    buf[0] = 0x00; // Початковий адреси регістру DATA_REG
+    if (write(file, buf, 1) != 1) {
+        std::cerr << "Error writing to QMC5883L" << std::endl;
+        return 1;
+    }
+    if (read(file, data, 6) != 6) {
+        std::cerr << "Error reading from QMC5883L" << std::endl;
+        return 1;
+    }
+
+    // Обробка отриманих значень магнітного поля
+    x = (data[1] << 8) | data[0];
+  float axis_x = x;
    
     send_mavlink_packet(axis_x,input);
     return 0;
