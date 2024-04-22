@@ -8,8 +8,11 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <cmath>
 #include <linux/i2c-dev.h>
 #include <sys/socket.h>
+#include <chrono>
+#include <thread>
 #define I2C_DEV "/dev/i2c-1" // Шлях до пристрою I2C
 
 #define QMC5883L_ADDR 0x0D // Адреса датчика QMC5883L на шині I2C
@@ -62,7 +65,7 @@ void send_mavlink_packet(float axis_x,const char* dest_ip) {
 
     // Відправка пакету
     sendto(sockfd, &mavlink_packet, sizeof(mavlink_packet), 0, (const struct sockaddr *) &dest_addr, sizeof(dest_addr));
-    std::cout<<mavlink_packet.custom_mode; 
+    std::cout<<mavlink_packet.custom_mode <<std::endl; 
 
     close(sockfd);
 }
@@ -75,6 +78,8 @@ int main() {
     const char* input = dest_ip.c_str();
     int file;
     char filename[20];
+    while(true)
+   {
     int x, y, z;
 
     // Відкриття з'єднання з шиною I2C
@@ -112,8 +117,22 @@ int main() {
 
     // Обробка отриманих значень магнітного поля
     x = (data[1] << 8) | data[0];
-  float axis_x = x;
-   
-    send_mavlink_packet(axis_x,input);
+    y = (data[3] << 8) | data[2];
+    z = (data[5] << 8) | data[4];
+
+    double pi = M_PI;
+    float arctan = std::atan2(y, x) - 0.00669;
+    if(arctan > 2.0 * pi)
+           arctan = arctan - 2.0 * pi;
+        // check for sign
+    if(arctan < 0.0)
+            arctan = arctan + 2.0 * pi;
+        
+        // convert into angle
+        float heading_angle = arctan * 180.0 / pi;  
+    std::cout<<pi<<std::endl;
+    send_mavlink_packet(heading_angle,input);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
     return 0;
 }

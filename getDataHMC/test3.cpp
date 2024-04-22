@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <cmath>
 #include <hmc5883l.h>
 
 #define PORT 14555
@@ -40,8 +41,6 @@ void send_mavlink_packet(float axis_x,const char* dest_ip) {
         perror("Invalid address/ Address not supported");
         exit(EXIT_FAILURE);
     }
-
-    // Формування Mavlink пакету
     mavlink_packet_t mavlink_packet;
     mavlink_packet.header = 0xFE;
     mavlink_packet.len = sizeof(mavlink_packet);
@@ -58,7 +57,7 @@ void send_mavlink_packet(float axis_x,const char* dest_ip) {
 
     // Відправка пакету
     sendto(sockfd, &mavlink_packet, sizeof(mavlink_packet), 0, (const struct sockaddr *) &dest_addr, sizeof(dest_addr));
-    std::cout<<mavlink_packet.custom_mode; 
+    std::cout<<mavlink_packet.custom_mode <<std::endl; 
 
     close(sockfd);
 }
@@ -70,7 +69,8 @@ int main() {
     std::cin>>dest_ip;
     const char* input = dest_ip.c_str();
     HMC5883L hmc5883l;
-  
+  while (true)
+{
   // Initialize
   if( hmc5883l_init(&hmc5883l) != HMC5883L_OKAY ) {
       fprintf(stderr, "Error: %d\n", hmc5883l._error);
@@ -79,8 +79,18 @@ int main() {
   
   // Read
   hmc5883l_read(&hmc5883l);
-  float axis_x = hmc5883l._data.x;
-   
-    send_mavlink_packet(axis_x,input);
-    return 0;
+  float y = hmc5883l._data.y;
+  float x = hmc5883l._data.x;
+  //std::cout<<axis_x;
+  float pi = M_PI; 
+  float heading = std::atan2(y, x) - 0.00669;
+  if(heading > 2.0 * pi)
+     heading = heading - 2.0 * pi;
+  if(heading < 0.0)
+    heading = heading + 2.0 * pi;
+
+  float heading_angle = int(heading * 180.0 / pi);
+  send_mavlink_packet(heading_angle, input);
+  }
+  return 0;
 }
